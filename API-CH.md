@@ -1,6 +1,6 @@
 #API参考
 
-**注意**: 这个文档仅对bluebird 2.x版本有效，不是针对1.x版本的 - [这里是1.x的文档](https://github.com/petkaantonov/bluebird/blob/ca0f2f8b204df7015eb1f7b75ba8195a81bf0d7e/API.md)
+**注意**: 这个文档仅对bluebird 2.x版本有效，并非针对1.x版本的 - [这里是1.x的文档](https://github.com/petkaantonov/bluebird/blob/ca0f2f8b204df7015eb1f7b75ba8195a81bf0d7e/API.md)
 
 - [Core](#core)
     - [`new Promise(Function<Function resolve, Function reject> resolver)`](#new-promisefunctionfunction-resolve-function-reject-resolver---promise)
@@ -121,7 +121,7 @@ If you pass a promise object to the `resolve` function, the created promise will
 <hr>
 
 
-为了确保
+当你无法直接开始执行调用链时，为了确保函数能够绝对严格地返回promise对象，你可以在调用链的开头声明一个返回了`new Promise`的函数
 To make sure a function that returns a promise is following the implicit but critically important contract of promises, you can start a function with `new Promise` if you cannot start a chain immediately:
 
 ```js
@@ -181,6 +181,7 @@ promptAsync("Which url to visit?").then(function(url) {
 
 #####`.spread([Function fulfilledHandler] [, Function rejectedHandler ])` -> `Promise`
 
+与`.then`方法类似，但是上一个回调函数的结果值或者抛出的异常_必须_是一个数组，这个数组的成员将会依次作为参数传入
 Like calling `.then`, but the fulfillment value or rejection reason _must be_ an array, which is flattened to the formal parameters of the handlers.
 
 ```js
@@ -197,49 +198,62 @@ Promise.delay(500).then(function() {
 });
 ```
 
+如果你想整合多个不相干但是同时进行的promise，请使用[`Promise.join()`](#promisejoinpromisethenablevalue-promises-function-handler---promise)
+
+
 If you want to coordinate several discrete concurrent promises, use [`Promise.join()`](#promisejoinpromisethenablevalue-promises-function-handler---promise)
 
 <hr>
 
 #####`.catch(Function handler)` -> `Promise`
 
+
+这是一个可以捕获所有异常的句柄，是`.then(null, handler)`的缩略写法。从`.then`调用链中产生的任何异常都会被传送到最近的`.catch`句柄中。
+
 This is a catch-all exception handler, shortcut for calling `.then(null, handler)` on this promise. Any exception happening in a `.then`-chain will propagate to nearest `.catch` handler.
 
+*在一些稍早的ECMAScript版本中，为了兼容性，请使用`.caught()`来替代`.catch()`*
 *For compatibility with earlier ECMAScript version, an alias `.caught()` is provided for `.catch()`.*
 
 <hr>
 
 #####`.catch([Function ErrorClass|Function predicate...], Function handler)` -> `Promise`
 
+`.catch`的扩展用法，类似Java或者C#的异常从句。你可以指定一些数字或者异常对象的构造器函数作为捕获句柄，而不是手动使用`instanceof` 或者 `.name === "SomeError"`。当捕获句柄是第一个与抛出的异常相匹配时，这个句柄将会被调用。
+
 This extends `.catch` to work more like catch-clauses in languages like Java or C#. Instead of manually checking `instanceof` or `.name === "SomeError"`, you may specify a number of error constructors which are eligible for this catch handler. The catch handler that is first met that has eligible constructors specified, is the one that will be called.
 
+例子:
 Example:
 
 ```js
 somePromise.then(function() {
     return a.b.c.d();
 }).catch(TypeError, function(e) {
+    //如果a被定义，而后续调用出错，调用链将会在这里终止，因为捕获了一个TypeError
     //If a is defined, will end up here because
     //it is a type error to reference property of undefined
 }).catch(ReferenceError, function(e) {
+    //如果a没有被定义，将会在这里终止，因为捕获了一个ReferenceError
     //Will end up here if a wasn't defined at all
 }).catch(function(e) {
+    //捕获余下的错误，这些错误既不是TypeError也不是ReferenceError
     //Generic catch-the rest, error wasn't TypeError nor
     //ReferenceError
 });
 ```
-
+也可以同时使用多个捕获句柄：
 You may also add multiple filters for a catch handler:
 
 ```js
 somePromise.then(function() {
     return a.b.c.d();
 }).catch(TypeError, ReferenceError, function(e) {
-    //Will end up here on programmer error
+    //程序自身出错将会停止在这里
 }).catch(NetworkError, TimeoutError, function(e) {
-    //Will end up here on expected everyday network errors
+    //网络错误将会停止在这里
 }).catch(function(e) {
-    //Catch any unexpected errors
+    //捕获剩下的其它错误
 });
 ```
 
