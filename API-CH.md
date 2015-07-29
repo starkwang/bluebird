@@ -2,7 +2,7 @@
 
 **注意**: 这个文档仅对bluebird 2.x版本有效，并非针对1.x版本的 - [这里是1.x的文档](https://github.com/petkaantonov/bluebird/blob/ca0f2f8b204df7015eb1f7b75ba8195a81bf0d7e/API.md)
 
-- [Core](#core)
+- [核心](#core)
     - [`new Promise(Function<Function resolve, Function reject> resolver)`](#new-promisefunctionfunction-resolve-function-reject-resolver---promise)
     - [`.then([Function fulfilledHandler] [, Function rejectedHandler ])`](#thenfunction-fulfilledhandler--function-rejectedhandler----promise)
     - [`.spread([Function fulfilledHandler] [, Function rejectedHandler ])`](#spreadfunction-fulfilledhandler--function-rejectedhandler----promise)
@@ -17,13 +17,13 @@
     - [`Promise.resolve(dynamic value)`](#promiseresolvedynamic-value---promise)
     - [`Promise.reject(dynamic reason)`](#promiserejectdynamic-reason---promise)
     - [`Promise.bind(dynamic thisArg)`](#promisebinddynamic-thisarg---promise)
-- [Synchronous inspection](#synchronous-inspection)
+- [同步检查](#synchronous-inspection)
     - [`.isFulfilled()`](#isfulfilled---boolean)
     - [`.isRejected()`](#isrejected---boolean)
     - [`.isPending()`](#ispending---boolean)
     - [`.value()`](#value---dynamic)
     - [`.reason()`](#reason---dynamic)
-- [Collections](#collections)
+- [集合](#collections)
     - [`.all()`](#all---promise)
     - [`.props()`](#props---promise)
     - [`.settle()`](#settle---promise)
@@ -36,10 +36,10 @@
     - [`.filter(Function filterer [, Object options])`](#filterfunction-filterer--object-options---promise)
         - [Option: `concurrency`](#option-concurrency)
     - [`.each(Function iterator)`](#eachfunction-iterator---promise)
-- [Resource management](#resource-management)
+- [资源管理](#resource-management)
     - [`Promise.using(Promise|Disposer promise, Promise|Disposer promise ..., Function handler)`](#promiseusingpromisedisposer-promise-promisedisposer-promise--function-handler---promise)
     - [`.disposer(Function disposer)`](#disposerfunction-disposer---disposer)
-- [Promisification](#promisification)
+- [函数Promise化](#promisification)
     - [`Promise.promisify(Function nodeFunction [, dynamic receiver])`](#promisepromisifyfunction-nodefunction--dynamic-receiver---function)
     - [`Promise.promisifyAll(Object target [, Object options])`](#promisepromisifyallobject-target--object-options---object)
         - [Option: `suffix`](#option-suffix)
@@ -48,11 +48,11 @@
     - [`Promise.fromNode(Function resolver)`](#promisefromnodefunction-resolver---promise)
     - [`.nodeify([Function callback] [, Object options])`](#nodeifyfunction-callback--object-options---promise)
         - [Option: `spread`](#option-spread)
-- [Timers](#timers)
+- [计时器](#timers)
     - [`.delay(int ms)`](#delayint-ms---promise)
     - [`.timeout(int ms [, String message])`](#timeoutint-ms--string-message---promise)
         - [`Promise.delay([dynamic value], int ms)`](#promisedelaydynamic-value-int-ms---promise)
-- [Cancellation](#cancellation)
+- [取消](#cancellation)
     - [`.cancellable()`](#cancellable---promise)
     - [`.uncancellable()`](#uncancellable---promise)
     - [`.cancel([Error reason])`](#cancelerror-reason---promise)
@@ -83,9 +83,10 @@
 - [Progression migration](#progression-migration)
 - [Deferred migration](#deferred-migration)
 
+注意在API中，每个Promise方法都有一个静态的对偶。例如，`Promise.map(arr, fn)`和`Promise.resolve(arr).map(fn)`是等效的。
 Note that every instance promise method in the API has a static counterpart. For example `Promise.map(arr, fn)` is the same as calling `Promise.resolve(arr).map(fn)`.
 
-##Core
+##核心
 
 `Promise`实例的核心方法以及Promise类的静态方法
 
@@ -257,8 +258,10 @@ somePromise.then(function() {
 });
 ```
 
+为了能使传入的异常参数的类型被判断为error，你需要让异常构造器的`.prototype`属性为`instanceof Error`
 For a parameter to be considered a type of error that you want to filter, you need the constructor to have its `.prototype` property be `instanceof Error`.
 
+下面是一个最简单的例子：
 Such a constructor can be minimally created like so:
 
 ```js
@@ -266,6 +269,7 @@ function MyCustomError() {}
 MyCustomError.prototype = Object.create(Error.prototype);
 ```
 
+这样使用：
 Using it:
 
 ```js
@@ -276,7 +280,10 @@ Promise.resolve().then(function() {
 });
 ```
 
+如果你想跟踪堆栈轨迹，或者让输出的字符串更简洁，应该像下面这样做：
 However if you  want stack traces and cleaner string output, then you should do:
+
+*在Node.js或者其他V8环境下，是支持使用`Error.captureStackTrace`的*
 
 *in Node.js and other V8 environments, with support for `Error.captureStackTrace`*
 
@@ -290,6 +297,7 @@ MyCustomError.prototype = Object.create(Error.prototype);
 MyCustomError.prototype.constructor = MyCustomError;
 ```
 
+使用CoffeeScript的`class`也可以达到同样的效果：
 Using CoffeeScript's `class` for the same:
 
 ```coffee
@@ -299,15 +307,19 @@ class MyCustomError extends Error
     Error.captureStackTrace(this, MyCustomError)
 ```
 
+这个方法同样支持断言，如果传入的是一个判别函数，而不是异常的构造器，那么异常将会以参数的形式传入判别函数中，判别函数的返回值将会决定这个捕获句柄是否被调用。
+
 This method also supports predicate-based filters. If you pass a
 predicate function instead of an error constructor, the predicate will receive
 the error as an argument. The return result of the predicate will be used
 determine whether the error handler should be called.
 
+
 Predicates should allow for very fine grained control over caught errors:
 pattern matching, error-type sets with set operations and many other techniques
 can be implemented on top of them.
 
+下面是一个使用了断言来捕获异常的例子：
 Example of using a predicate-based filter:
 
 ```js
@@ -324,40 +336,43 @@ request("http://www.google.com").then(function(contents) {
    //A client error like 400 Bad Request happened
 });
 ```
-
+*在一些稍早的ECMAScript版本中，为了兼容性，请使用`.caught()`来替代`.catch()`*
 *For compatibility with earlier ECMAScript version, an alias `.caught()` is provided for `.catch()`.*
 
 <hr>
 
 #####`.error( [rejectedHandler] )` -> `Promise`
 
+类似[`.catch`](#catchfunction-handler---promise)，但是它只捕获[operational errors](#operationalerror)，而不是捕获某一特定类型的异常
 Like [`.catch`](#catchfunction-handler---promise) but instead of catching all types of exceptions, it only catches [operational errors](#operationalerror)
 
+*注意，"errors"是一个类型为 Error 的对象，不是 string、numbers 或者其他类型，具体可以看这里：[a string is not an error](http://www.devthought.com/2011/12/22/a-string-is-not-an-error/)*
 *Note, "errors" mean errors, as in objects that are `instanceof Error` - not strings, numbers and so on. See [a string is not an error](http://www.devthought.com/2011/12/22/a-string-is-not-an-error/).*
 
+它与下面这种[`.catch`](#catchfunction-errorclassfunction-predicate-function-handler---promise)的使用方法是等效的：
 It is equivalent to the following [`.catch`](#catchfunction-errorclassfunction-predicate-function-handler---promise) pattern:
 
 ```js
-// Assumes OperationalError has been made global
+//假设 OperationalError 在全局中产生
 function isOperationalError(e) {
     if (e == null) return false;
     return (e instanceof OperationalError) || (e.isOperational === true);
 }
 
-// Now this bit:
+// 这种使用方法：
 .catch(isOperationalError, function(e) {
     // ...
 })
 
-// Is equivalent to:
-
+// 等效于下面：
 .error(function(e) {
     // ...
 });
 ```
-
+例如，当一个被promise化的函数因为运行中的某些异常被终止执行，将会触发`.error()`。但是如果这个异常是被 **throws** 出来的，只有`.catch`才能捕获。
 For example, if a promisified function errbacks the node-style callback with an error, that could be caught with `.error()`. However if the node-style callback **throws** an error, only `.catch` would catch that.
 
+下面这个例子中，可以单独处理JSON产生的`SyntaxError`以及来自`fs`的文件系统异常，同时让其它未捕获的异常继续冒泡。
 In the following example you might want to handle just the `SyntaxError` from JSON.parse and Filesystem errors from `fs` but let programmer errors bubble as unhandled rejections:
 
 ```js
@@ -372,6 +387,7 @@ fs.readFileAsync("myfile.json").then(JSON.parse).then(function (json) {
 });
 ```
 
+因为现在不存在能捕获全部异常的句柄，所以如果你不小心输入了`console.lag`（导致产生了一个意料之外的异常），你将会看到：
 Now, because there is no catch-all handler, if you typed `console.lag` (causes an error you don't expect), you will see:
 
 ```
@@ -388,14 +404,17 @@ From previous event:
     at node.js:761:3
 ```
 
+*（如果你不想得到上面的东西，你需要使用[long stack traces](#promiselongstacktraces---void) ）*
 *( If you don't get the above - you need to enable [long stack traces](#promiselongstacktraces---void) )*
 
+如果文件中有不规范的JSON：
 And if the file contains invalid JSON:
 
 ```
 file contains invalid json
 ```
 
+如果`fs`模块产生了异常，比如文件未找到：
 And if the `fs` module causes an error like file not found:
 
 ```
@@ -406,10 +425,13 @@ unable to read file, because:  ENOENT, open 'not_there.txt'
 
 #####`.finally(Function handler)` -> `Promise`
 
+传入一个句柄，无论promise调用链的情况如何，这个句柄都会在最后被调用。 `.finally()` 拥有特殊的语义，最后的返回值不能在句柄中被改变。
 Pass a handler that will be called regardless of this promise's fate. Returns a new promise chained from this promise. There are special semantics for `.finally()` in that the final value cannot be modified from the handler.
 
+*注意：使用 `.finally()` 做资源管理不是一个好的方法，具体请看 [resource management](#resource-management)*
 *Note: using `.finally()` for resource management is not a good idea, see [resource management](#resource-management)*
 
+考虑下面这种情况：
 Consider the example:
 
 ```js
@@ -428,8 +450,10 @@ function ajaxGetAsync(url) {
 }
 ```
 
+这个例子中，将不会产生预期的效果，因为 `then` 句柄实际上吞噬了异常，并且返回 `undefined` 给后续的调用链。
 This example doesn't work as intended because the `then` handler actually swallows the exception and returns `undefined` for any further chainers.
 
+解决方法就是使用 `.finally` ：
 The situation can be fixed with `.finally`:
 
 ```js
@@ -445,9 +469,10 @@ function ajaxGetAsync(url) {
     });
 }
 ```
-
+现在动画在任何情况下都可以被隐藏，但是前面的异常或者返回值将会自动跳过finally，传输给下一个调用单元。这样更加符合同步情况下的 `finally` 关键字。
 Now the animation is hidden but an exception or the actual return value will automatically skip the finally and propagate to further chainers. This is more in line with the synchronous `finally` keyword.
 
+*为了兼容更早版本的ECMAscript，可以使用 `.lastly()` 来替代 `.finally()`*
 *For compatibility with earlier ECMAScript version, an alias `.lastly()` is provided for `.finally()`.*
 
 <hr>
