@@ -479,15 +479,19 @@ Now the animation is hidden but an exception or the actual return value will aut
 
 #####`.bind(dynamic thisArg)` -> `Promise`
 
+创建一个promise对象，这个对象与给定的 `thisArg` 绑定，对象内部的 `this` 将会指向被绑定的值。另外，由这个被绑定对象所产生的promise对象也会被绑定到 `thisArg`。
 Create a promise that follows this promise, but is bound to the given `thisArg` value. A bound promise will call its handlers with the bound value set to `this`. Additionally promises derived from a bound promise will also be bound promises with the same `thisArg` binding as the original promise.
 
+如果`thisArg`是一个promise对象或者可以异步调用then方法，那么在它的最终结果值产生之前，线程一直会被阻塞，直到获得执行结果。如果`thisArg`
 If `thisArg` is a promise or thenable, its resolution will be awaited for and the bound value will be the promise's fulfillment value. If `thisArg` rejects
 then the returned promise is rejected with the `thisArg's` rejection reason. Note that this means you cannot use `this` without checking inside catch handlers for promises that bind to promise because in case of rejection of `thisArg`, `this` will be `undefined`.
 
 <hr>
 
+由于没有箭头函数提供的词法`this`，在编写面向对象代码的时候，异步流程和同步流程之间的通信将会变得很麻烦。`.bind()`可以改善这种情况。
 Without arrow functions that provide lexical `this`, the correspondence between async and sync code breaks down when writing object-oriented code. `.bind()` alleviates this.
 
+参考：
 Consider:
 
 ```js
@@ -505,6 +509,7 @@ MyClass.prototype.method = function() {
 };
 ```
 
+上面的代码有更简洁的写法：
 The above has a direct translation:
 
 ```js
@@ -522,10 +527,12 @@ MyClass.prototype.method = function() {
 };
 ```
 
+`.bind()` 是promise中使用 `this` 最有效的方法。在上面的代码中，句柄不是一个闭包，因此甚至可以在需要的时候做变量提升。在从一个 promise 传递到另一个 promise 过程中几乎不需要额外的管理。
 `.bind()` is the most efficient way of utilizing `this` with promises. The handler functions in the above code are not closures and can therefore even be hoisted out if needed. There is literally no overhead when propagating the bound value from one promise to another.
 
 <hr>
 
+`.bind()`还有另外一种用途 - 当需要在promise句柄之间传递信息的时候，不用额外地创建一个函数或者对象：
 `.bind()` also has a useful side purpose - promise handlers don't need to share a function to use shared state:
 
 ```js
@@ -540,6 +547,7 @@ somethingAsync().bind({})
 });
 ```
 
+当没有使用`.bind()`的时候，或变成这样：
 The above without `.bind()` could be achieved with:
 
 ```js
@@ -555,46 +563,53 @@ somethingAsync()
 });
 ```
 
+
+但是，这里还是有一些细微的差别：
 However, there are many differences when you look closer:
 
+- 需要一环调用链，不能直接在句柄上下文中使用
+- 如果没有使用`bind()`而是用后一种方法，那么额外的封装是必要的，以避免泄露`scope`。
+- 句柄函数实际上变成了一个闭包，因此会造成性能问题以及不可访问性。
 - Requires a statement so cannot be used in an expression context
 - If not there already, an additional wrapper function is required to avoid leaking or sharing `scope`
 - The handler functions are now closures, thus less efficient and not reusable
 
 <hr>
 
+注意bind只会沿着调用链生效。如果你在一个调用句柄的内部又创建了一个新的promise链，那么在这个新的链的内部，`this`是没有绑定的：
 Note that bind is only propagated with promise transformation. If you create new promise chains inside a handler, those chains are not bound to the "upper" `this`:
 
 ```js
 something().bind(var1).then(function() {
-    //`this` is var1 here
+    // this在这里是var1
     return Promise.all(getStuff()).then(function(results) {
-        //`this` is undefined here
-        //refine results here etc
+        //this在这里未定义
     });
 }).then(function() {
-    //`this` is var1 here
+    //this在这里是var1
 });
 ```
 
+实际上，如果你懂得使用bluebird的全部API，你*几乎不可能*像上面的例子一样需要在句柄中创建新的promise链。上面这个例子实际上可以被这样改写：
 However, if you are utilizing the full bluebird API offering, you will *almost never* need to resort to nesting promises in the first place. The above should be written more like:
 
 ```js
 something().bind(var1).then(function() {
-    //`this` is var1 here
+    //this在这里是var1
     return getStuff();
 }).map(function(result) {
-    //`this` is var1 here
-    //refine result here
+    //this在这里是var1
 }).then(function() {
-    //`this` is var1 here
+    //this在这里是var1
 });
 ```
 
+关于在异步处理集合的方法（例如`map()`），可以参考[Stackoverflow上的一个回答](http://stackoverflow.com/a/19467053/995876)
 Also see [this Stackoverflow answer](http://stackoverflow.com/a/19467053/995876) on a good example on how utilizing the collection instance methods like [`.map()`](#mapfunction-mapper--object-options---promise) can clean up code.
 
 <hr>
 
+如果你不想在一开始就绑定this，你可以像下面这样在调用链的尾部绑定：
 If you don't want to return a bound promise to the consumers of a promise, you can rebind the chain at the end:
 
 ```js
@@ -609,9 +624,11 @@ MyClass.prototype.method = function() {
     }).catch(function(e) {
         this.error(e.stack);
     }).bind(); //The `thisArg` is implicitly undefined - I.E. the default promise `this` value
+    //this在一开始是默认值，在句末可以被绑定
 };
 ```
 
+重绑定操作可以像下面这样使用：
 Rebinding can also be abused to do something gratuitous like this:
 
 ```js
@@ -622,6 +639,7 @@ Promise.resolve("my-element")
     .then(console.log);
 ```
 
+上面的用法与`console.log(document.getElementById("my-element"));`是等效的。在这里`.bind()`是必要的，因为在浏览器环境下，上面的方法都不是独立的函数。
 The above does `console.log(document.getElementById("my-element"));`. The `.bind()`s are necessary because in browser neither of the methods can be called as a stand-alone function.
 
 <hr>
