@@ -775,8 +775,10 @@ MyClass.prototype.method = Promise.method(function(input) {
 
 #####`Promise.resolve(dynamic value)` -> `Promise`
 
+创建一个状态为resolved（已解决）的promise。如果传入的值已经是一个`Promise`,那么它将直接返回。如果`value`不可以继续调用（即返回值带有`.then()`方法），那么将会返回一个状态为fullfilled（已完成）的Promise，其带有的返回值就是`value`。如果`value`是可以被继续调用的（类Promise对象，比如jQuery的$.ajax），那么会返回一个Promise对象，状态根据具体执行状况而定。
 Create a promise that is resolved with the given value. If `value` is already a trusted `Promise`, it is returned as is. If `value` is not a thenable, a fulfilled Promise is returned with `value` as its fulfillment value. If `value` is a thenable (Promise-like object, like those returned by jQuery's `$.ajax`), returns a trusted Promise that assimilates the state of the thenable.
 
+例子：(`$`代表jQuery)
 Example: (`$` is jQuery)
 
 ```js
@@ -796,18 +798,22 @@ Promise.resolve($.get("http://www.google.com")).then(function() {
 
 #####`Promise.reject(dynamic reason)` -> `Promise`
 
+产生一个状态为rejected（已拒绝）的promise对象，返回值带有`reason`
 Create a promise that is rejected with the given `reason`.
 
 <hr>
 
 #####`Promise.bind(dynamic thisArg)` -> `Promise`
 
+`Promise.resolve(undefined).bind(thisArg);`的语法糖。具体参考[`.bind()`](#binddynamic-thisarg---promise)。
 Sugar for `Promise.resolve(undefined).bind(thisArg);`. See [`.bind()`](#binddynamic-thisarg---promise).
 
 <hr>
 
 ##Synchronous inspection
+##同步检查
 
+有时候我们需要知道在某些特定时刻，一个promise对象的状态 - 使用`then()`来
 Often it is known in certain code paths that a promise is guaranteed to be fulfilled at that point - it would then be extremely inconvenient to use `.then()` to get at the promise's value as the callback is always called asynchronously.
 
 
@@ -863,34 +869,40 @@ This interface is implemented by `Promise` instances as well as `PromiseInspecti
 
 #####`.isFulfilled()` -> `boolean`
 
+检查这个promise对象的状态是否为fulfilled（已完成）。
 See if this `promise` has been fulfilled.
 
 <hr>
 
 #####`.isRejected()` -> `boolean`
 
+检查这个promise对象的状态是否为rejected（已拒绝）。
 See if this `promise` has been rejected.
 
 <hr>
 
 #####`.isPending()` -> `boolean`
-
+检查这个promise对象的状态是否为pending（等待中，既不是fulfilled也不是rejected）。
 See if this `promise` is pending (not fulfilled or rejected).
 
 <hr>
 
 #####`.value()` -> `dynamic`
 
+得到promise的完成值。如果promise未完成则抛出错误 - promise对象未完成的时候调用这个方法是错误的。
 Get the fulfillment value of this promise. Throws an error if the promise isn't fulfilled - it is a bug to call this method on an unfulfilled promise.
 
+在调用`.value()`之前，你应该检查这个promise对象的`.isFulfilled()` - 以保证调用这个方法的时候promise对象已经完成。
 You should check if this promise is `.isFulfilled()` before calling `.value()` - or only call `.value()` in code paths where it's guaranteed that this promise is fulfilled.
 
 <hr>
 
 #####`.reason()` -> `dynamic`
 
+得到promise对象拒绝的原因。当promise对象的状态不是rejected的时候抛出一个错误 - 在未被拒绝的promise对象下调用这个方法是错误的。
 Get the rejection reason of this promise. Throws an error if the promise isn't rejected - it is a bug to call this method on an unrejected promise.
 
+在调用`.reason()`之前，你应该检查这个对象的`.isRejected()` - 以确保当前对象的状态为rejected。
 You should check if this promise is `.isRejected()` before calling `.reason()` - or only call `.reason()` in code paths where it's guaranteed that this promise is rejected.
 
 
