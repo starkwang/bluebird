@@ -646,6 +646,7 @@ The above does `console.log(document.getElementById("my-element"));`. The `.bind
 
 #####`Promise.join(Promise|Thenable|value promises..., Function handler)` -> `Promise`
 
+用于协调多个并行的promise。当需要处理一个不定数量但是规格一致的多个promise时，`.all()`是较好的选择。但是当你需要协调固定数量的promise时，`Promise.join`是一种更加简单（以及更加优雅）的方法，比如下面这个例子：
 For coordinating multiple concurrent discrete promises. While [`.all()`](#all---promise) is good for handling a dynamically sized list of uniform promises, `Promise.join` is much easier (and more performant) to use when you have a fixed amount of discrete promises that you want to coordinate concurrently, for example:
 
 ```js
@@ -690,12 +691,14 @@ join(fContents, fStat, fSqlClient, function(contents, stat, sqlClient) {
 });
 ```
 
+*注意：在1.x和0.x版本中，`Promise.join` 类似 `Promise.all`，区别在于它直接在参数中获取值，而不是在数组中。这个特性现在过时，但是依然在部分地方被支持 - 当最后一个参数是函数类型并且可以立即执行时，这个语义将生效。*
 *Note: In 1.x and 0.x `Promise.join` used to be a `Promise.all` that took the values in as arguments instead in an array. This behavior has been deprecated but is still supported partially - when the last argument is an immediate function value the new semantics will apply*
 
 <hr>
 
 #####`Promise.try(Function fn [, Array<dynamic>|dynamic arguments] [, dynamic ctx] )` -> `Promise`
 
+从`Promise.try`启动一段调用链。任何异常将让返回的promise变成rejection（拒绝）状态。
 Start the chain of promises with `Promise.try`. Any synchronous exceptions will be turned into rejections on the returned promise.
 
 ```js
@@ -709,20 +712,26 @@ function getUserById(id) {
 }
 ```
 
+使用这个函数时，将会在后续的`.catch`句柄中捕获全部的错误，而不是麻烦地同时去处理同步错误和异步错误。
 Now if someone uses this function, they will catch all errors in their Promise `.catch` handlers instead of having to handle both synchronous and asynchronous exception flows.
 
+注意第二个参数：如果它是一个真数组，它的值将会依次成为函数调用的各个参数。否则，它将被传递作为函数调用的第一个参数
 Note about second argument: if it's specifically a true array, its values become respective arguments for the function call. Otherwise it is passed as is as the first argument for the function call.
 
+*为了兼容早期的ECMAscript版本，可以使用 `Promise.attempt()` 来替代 `Promise.try()`。*
 *For compatibility with earlier ECMAScript version, an alias `Promise.attempt()` is provided for `Promise.try()`.*
 
 <hr>
 
 #####`Promise.method(Function fn)` -> `Function`
 
+返回一个根据给定`fn`生成的新的函数。这个新函数会返回状态为fullfilled（已完成）的promise，而原先的函数中，需要手动处理promise对象的返回值或者抛出异常的rejected状态。
 Returns a new function that wraps the given function `fn`. The new function will always return a promise that is fulfilled with the original functions return values or rejected with thrown exceptions from the original function.
 
+当函数有时需要异步返回或者异步抛出异常时，使用这个方法会方便很多。
 This method is convenient when a function can sometimes return synchronously or throw synchronously.
 
+下面是没有使用 `Promise.method` 的例子：
 Example without using `Promise.method`:
 
 ```js
@@ -742,6 +751,7 @@ MyClass.prototype.method = function(input) {
 };
 ```
 
+使用 `Promise.method` 后，就不再需要手动处理返回值或者抛出异常了。
 Using the same function `Promise.method`, there is no need to manually wrap direct return or throw values into a promise:
 
 ```js
