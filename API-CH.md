@@ -907,15 +907,22 @@ You should check if this promise is `.isRejected()` before calling `.reason()` -
 
 
 ##Collections
+##集合
 
+`Promise`类提供的用于处理promise集合的实例方法以及静态方法。
 Methods of `Promise` instances and core static methods of the Promise class to deal with collections of promises or mixed promises and values.
+
+所有的集合方法在Promise对象中都有一个静态的等价方法，比如，`somePromise.map(...)...` 与 `Promise.map(somePromise, ...)...`等价，`somePromise.all()` 与 `Promise.all(somePromise)` 等价。
 
 All collection methods have a static equivalent on the Promise object, e.g. `somePromise.map(...)...` is same as `Promise.map(somePromise, ...)...`,
 `somePromise.all()` is same as `Promise.all(somePromise)` and so on.
 
+集合方法不会改变原始输入。数组中的空元素在处理时将会被认作 `undefined`。
 None of the collection methods modify the original input. Holes in arrays are treated as if they were defined with the value `undefined`.
 
 #####`.all()` -> `Promise`
+
+传入一个由promise对象组成的数组（这个数组包含多个promise，当所有元素的状态均为完成时，这个实例的状态会变为完成）。这个promise的终值是一个由原数组中所有promise对象终值组成的数组。如果数组中任何一个promise对象的状态变为”拒绝”，那么最后传出的promise的状态也是“拒绝”，并带有拒因。
 
 Given an array, or a promise of an array, which contains promises (or a mix of promises and values) return a promise that is fulfilled when all the items in the array are fulfilled. The promise's fulfillment value is an array with fulfillment values at respective positions to the original array. If any promise in the array rejects, the returned promise is rejected with the rejection reason.
 
@@ -933,7 +940,11 @@ Promise.all(files).then(function() {
 
 #####`.props()` -> `Promise`
 
+类似`.all()`，但是是针对对象属性的，而不是数组。当传入对象的所有属性状态均为“完成”时，它会返回一个promise，这个promise带有的终值是一个对象，这个对象的所有属性的值是原对象中，对应属性的终值。如果对象中任何一个属性的状态变为”拒绝”，那么最后传出的promise的状态也是“拒绝”，并带有拒因。
+
 Like `.all()` but for object properties instead of array items. Returns a promise that is fulfilled when all the properties of the object are fulfilled. The promise's fulfillment value is an object with fulfillment values at respective keys to the original object. If any promise in the object rejects, the returned promise is rejected with the rejection reason.
+
+
 
 If `object` is a trusted `Promise`, then it will be treated as a promise for object rather than for its properties. All other objects are treated for their properties as is returned by `Object.keys` - the object's own enumerable properties.
 
@@ -998,6 +1009,8 @@ directorySizeInfo(process.argv[2] || ".").then(function(sizeInfo) {
 });
 ```
 
+注意，如果你不需要得到对象的具体属性值，那么使用[`Promise.join()`](#promisejoinpromisethenablevalue-promises-function-handler---promise)会更加方便：
+
 Note that if you have no use for the result object other than retrieving the properties, it is more convenient to use [`Promise.join()`](#promisejoinpromisethenablevalue-promises-function-handler---promise):
 
 ```js
@@ -1010,6 +1023,7 @@ Promise.join(getPictures(), getComments(), getTweets(),
 <hr>
 
 #####`.settle()` -> `Promise`
+
 
 Given an array, or a promise of an array, which contains promises (or a mix of promises and values) return a promise that is fulfilled when all the items in the array are either fulfilled or rejected. The fulfillment value is an array of [`PromiseInspection`](#synchronous-inspection) instances at respective positions in relation to the input array.
 
