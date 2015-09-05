@@ -1024,28 +1024,32 @@ Promise.join(getPictures(), getComments(), getTweets(),
 
 #####`.settle()` -> `Promise`
 
-
+给定一个包含多个promise的数组，或者一个数组的promise对象，当数组中的所有元素状态为“已完成”或者“已拒绝”时，将会返回一个状态为“已完成“的对象。终值是一个由[`PromiseInspection`](#synchronous-inspection)实例组成的数组。
 Given an array, or a promise of an array, which contains promises (or a mix of promises and values) return a promise that is fulfilled when all the items in the array are either fulfilled or rejected. The fulfillment value is an array of [`PromiseInspection`](#synchronous-inspection) instances at respective positions in relation to the input array.
 
+当你有一个promise组成的数组，并且希望知道它们什么时候全部处理完毕 - 无论最终状态是”已完成“还是”已拒绝“，这个方法会很有用。
 This method is useful for when you have an array of promises and you'd like to know when all of them resolve - either by fulfilling or rejecting. For example:
 
 ```js
 var fs = Promise.promisifyAll(require("fs"));
 // map array into array of promises
+//遍历数组，将它们promise化
 var files = ['a.txt', 'b.txt'].map(function(fileName) {
     return fs.readFileAsync(fileName, "utf8");
 });
 Promise.settle(files).then(function(results) {
     // results is a PromiseInspection array
+    //results是一个PromiseInspection数组
     // this is reached once the operations are all done, regardless if
+    //无论成功与否，这一步都会执行。
     // they're successful or not.
     var r = results[0];
-    if (r.isFulfilled()) {  // check if was successful
-        console.log(r.value()); // the promise's return value
-        r.reason(); // throws because the promise is fulfilled
-    } else if (r.isRejected()) { // check if the read failed
-        console.log(r.reason()); //reason
-        r.value(); // throws because the promise is rejected
+    if (r.isFulfilled()) {  //检查是否为成功状态
+        console.log(r.value()); //promise的终值
+        r.reason(); //由于状态为成功，所以这里会抛出错误。
+    } else if (r.isRejected()) { //检查是否为拒绝状态
+        console.log(r.reason()); //拒因
+        r.value(); //由于状态为拒绝，所以这里会抛出错误。
     }
 });
 ```
@@ -1054,14 +1058,17 @@ Promise.settle(files).then(function(results) {
 
 #####`.any()` -> `Promise`
 
+类似参数`count`为1的`.some()`，但是终值不是一个数组，而是值本身。
 Like `.some()`, with 1 as `count`. However, if the promise fulfills, the fulfillment value is not an array of 1 but the value directly.
 
 <hr>
 
 #####`.race()` -> `Promise`
 
+给定一个数组，当其中任意一个元素状态变为“已完成”或者“已拒绝”时，都会立即返回一个promise，带有终值或者拒因。
 Given an array, or a promise of an array, which contains promises (or a mix of promises and values) return a promise that is fulfilled or rejected as soon as a promise in the array is fulfilled or rejected with the respective rejection reason or fulfillment value.
 
+在一般情况下更可能使用[`.any()`](#any---promise)。
 You most likely want to use the [`.any()`](#any---promise) method.
 
 <hr>
@@ -1069,8 +1076,11 @@ You most likely want to use the [`.any()`](#any---promise) method.
 
 #####`.some(int count)` -> `Promise`
 
+在多个promise对象中，创建一个“竞赛”，当这些promise中，有数量为`count`的promise的状态变为“已完成”时，将会返回一个终值，这个终值是一个数组，各元素为刚才“竞赛”中最快的几个promise的终值。
+
 Initiate a competetive race between multiple promises or values (values will become immediately fulfilled promises). When `count` amount of promises have been fulfilled, the returned promise is fulfilled with an array that contains the fulfillment values of the winners in order of resolution.
 
+下面这个例子对四个域名发起了ping，然后打印出最快的两个。
 This example pings 4 nameservers, and logs the fastest 2 on console:
 
 ```js
@@ -1084,11 +1094,16 @@ Promise.some([
 });
 ```
 
+如果有太多的promise的状态为“已拒绝”，以至于最后无法完成，那么将会抛出一个[`AggregateError`](#aggregateerror)错误。
+
 If too many promises are rejected so that the promise can never become fulfilled, it will be immediately rejected with an [`AggregateError`](#aggregateerror) of the rejection reasons in the order they were thrown in.
+
+你可以在`Promise.AggregateError`中找到相关参考。
 
 You can get a reference to `AggregateError` from `Promise.AggregateError`.
 
 ```js
+//为了呈现这个错误已经将其全局化。
 //For clarity assumes bluebird error types have been globalized
 Promise.some(...)
     .then(...)
