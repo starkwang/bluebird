@@ -83,7 +83,7 @@
 - [Progression migration](#progression-migration)
 - [Deferred migration](#deferred-migration)
 
-注意在API中，每个Promise方法都有一个静态的对偶。例如，`Promise.map(arr, fn)`和`Promise.resolve(arr).map(fn)`是等效的。
+注意在API中，每个Promise方法都有一个静态的对偶函数。例如，`Promise.map(arr, fn)`和`Promise.resolve(arr).map(fn)`是等效的。
 Note that every instance promise method in the API has a static counterpart. For example `Promise.map(arr, fn)` is the same as calling `Promise.resolve(arr).map(fn)`.
 
 ##核心
@@ -93,7 +93,7 @@ Note that every instance promise method in the API has a static counterpart. For
 #####`new Promise(Function<Function resolve, Function reject> resolver)` -> `Promise`
 
 
-创建一个新的promise对象。传入的函数将会收到两个类型为Function的参数`resolve`和`reject`，当promise对象内部的状态改变时，这两个函数可以被设置回调，用于封装对象的状态。
+创建一个新的promise对象。传入的函数将会收到两个类型为Function的参数`resolve`和`reject`，当promise对象内部的状态改变时，这两个函数可以被定义用于回调，以封装对象的状态。
 
 Create a new promise. The passed in function will receive functions `resolve` and `reject` as its arguments which can be called to seal the fate of the created promise.
 
@@ -140,7 +140,7 @@ function getConnection(urlString) {
 The above ensures `getConnection()` fulfills the contract of a promise-returning function of never throwing a synchronous exception. Also see [`Promise.try`](#promisetryfunction-fn--arraydynamicdynamic-arguments--dynamic-ctx----promise) and [`Promise.method`](#promisemethodfunction-fn---function)
 
 
-resolve函数将会被异步地回调（下面的例子只是为了说明使用，不适合实际使用）：
+resolve函数将会被异步地回调（下面的例子只是为了作为例子，不适合实际使用）：
 
 The resolver is called synchronously (the following is for documentation purposes and not idiomatic code):
 
@@ -161,7 +161,7 @@ function getPromiseResolveFn() {
 #####`.then([Function fulfilledHandler] [, Function rejectedHandler ])` -> `Promise`
 
 
-[Promises/A+ `.then()`](http://promises-aplus.github.io/promises-spec/).从当前的promise对象中返回一个新的promise对象。这个新的promise对象将会根据当前promise对象的最终状态（失败rejected或者成功resolved）调用不同的方法`fulfilledHandler`, `rejectedHandler`
+[Promises/A+ `.then()`](http://promises-aplus.github.io/promises-spec/).从当前的promise对象中返回一个新的promise对象。这个新的promise对象将会根据当前promise对象的终态（拒绝rejected或者解决resolved）调用不同的方法`fulfilledHandler`, `rejectedHandler`
 
 [Promises/A+ `.then()`](http://promises-aplus.github.io/promises-spec/). Returns a new promise chained from this promise. The new promise will be rejected or resolved depending on the passed `fulfilledHandler`, `rejectedHandler` and the state of this promise.
 
@@ -1119,10 +1119,13 @@ Promise.some(...)
 
 #####`.map(Function mapper [, Object options])` -> `Promise`
 
+遍历一个数组或者一个数组的promise，对每一个元素使用`mapper`函数（参数依次为`item`,`index`,`arrayLength`）。如果输入的数组中任意一个promise状态变为“拒绝”，那么最终返回的promise的状态也为“拒绝”。
 Map an array, or a promise of an array, which contains promises (or a mix of promises and values) with the given `mapper` function with the signature `(item, index, arrayLength)` where `item` is the resolved value of a respective promise in the input array. If any promise in the input array is rejected the returned promise is rejected as well.
 
+mapper函数会尽量快地被调用，即当数组中的元素对应的promise被解决时。这意味着由最终结果组成的数组的元素顺序不一定和输入时一样。同样地，`.map`可以被用于并发协作，而不像`.all().call("map", fn).all()`。
 The mapper function for a given item is called as soon as possible, that is, when the promise for that item's index in the input array is fulfilled. This doesn't mean that the result array has items in random order, it means that `.map` can be used for concurrency coordination unlike `.all().call("map", fn).all()`.
 
+例子：
 Example (copy paste and run):
 
 ```js
@@ -1140,8 +1143,11 @@ fs.readdirAsync(".").map(function(fileName) {
         }
     });
 // The return value of .map is a promise that is fulfilled with an array of the mapped values
+//.map的返回值是一个带有终值的数组
 // That means we only get here after all the files have been statted and their contents read
+//这意味着只有当所有文件都被读取到内存时，这个函数才会返回到这里
 // into memory. If you need to do more operations per file, they should be chained in the map
+//如果你需要对每个文件做进一步操作，可以使用接下来的数组。
 // callback for concurrency.
 }).call("sort", function(a, b) {
     return a.fileName.localeCompare(b.fileName);
@@ -1151,6 +1157,7 @@ fs.readdirAsync(".").map(function(fileName) {
 });
 ```
 
+map的静态用法：
 Example of static map:
 
 ```js
@@ -1172,17 +1179,20 @@ Promise.map(fileNames, function(fileName) {
    console.log("Invalid JSON in file " + e.fileName + ": " + e.message);
 });
 ```
-
+######设置: `concurrency`
 ######Option: `concurrency`
 
+你可以指定一个并发数：
 You may optionally specify a concurrency limit:
 
 ```js
 ...map(..., {concurrency: 1});
 ```
 
+并发数限制了同时执行的Promise数量。比如，如果 `concurrency` 是 `3` ，那么有且仅有3个Promise会执行，直到其中任意一个状态变为“已解决”
 The concurrency limit applies to Promises returned by the mapper function and it basically limits the number of Promises created. For example, if `concurrency` is `3` and the mapper callback has been called enough so that there are three returned Promises currently pending, no further callbacks are called until one of the pending Promises resolves. So the mapper function will be called three times and it will be called again only after at least one of the Promises resolves.
 
+下面这个例子中可以看出，读取20个文件时，限制或不限制并发数对于运行时间的影响：
 Playing with the first example with and without limits, and seeing how it affects the duration when reading 20 files:
 
 ```js
@@ -1202,9 +1212,12 @@ fs.readdirAsync(".").map(function(fileName) {
         }
     });
 // The return value of .map is a promise that is fulfilled with an array of the mapped values
+//.map的返回值是参数数组中所有promise的终值
 // That means we only get here after all the files have been statted and their contents read
+//这意味着只有当所有文件都被读取到内存时，这个函数才会返回到这里
 // into memory. If you need to do more operations per file, they should be chained in the map
 // callback for concurrency.
+//如果你需要对每个文件做进一步操作，可以使用接下来的数组。
 }, {concurrency: concurrency}).call("sort", function(a, b) {
     return a.fileName.localeCompare(b.fileName);
 }).then(function() {
@@ -1229,10 +1242,13 @@ such concurrency
 
 #####`.reduce(Function reducer [, dynamic initialValue])` -> `Promise`
 
+归约一个数组，或者一个数组的promise。规约函数会被传入四个参数：`(total, item, index, arrayLength)`。
 Reduce an array, or a promise of an array, which contains promises (or a mix of promises and values) with the given `reducer` function with the signature `(total, item, index, arrayLength)` where `item` is the resolved value of a respective promise in the input array, and `total` is either the initial value, or the result of the previous iteration. If any promise in the input array is rejected the returned promise is rejected as well.
 
+如果规约函数返回了一个promise或者其他含有`.then`方法的对象，那么在继续下一个循环之前，这个promise的结果会被延迟。
 If the reducer function returns a promise or a thenable, the result for the promise is awaited for before continuing with next iteration.
 
+下面是一个读取几个文件，并且把他们的内容加到一起的例子。每个文件的内容文本都是`10`。
 Read given files sequentially while summing their contents as an integer. Each file contains just the text `10`.
 
 ```js
@@ -1245,14 +1261,18 @@ Promise.reduce(["file1.txt", "file2.txt", "file3.txt"], function(total, fileName
 });
 ```
 
+
+*如果 `initialValue` 为 `undefined`（或者某个promise的终值为 `undefined`）并且数组中只有一个元素，那么将不会产生回调，而是直接返回 `undefined`。如果数组是空的，同样不会产生回调，会直接返回 `initialValue`（可能为 `undefined`）。*
 *If `initialValue` is `undefined` (or a promise that resolves to `undefined`) and the array contains only 1 item, the callback will not be called and `undefined` is returned. If the array is empty, the callback will not be called and `initialValue` is returned (which may be `undefined`).*
 
+Reduce方法会尽快地执行归约函数，所以你不再会用`.all().call("reduce")`
 Reduce will call the reducer as soon as possible, this is why you might want to use it over `.all().call("reduce")`.
 
 <hr>
 
 #####`.filter(Function filterer [, Object options])` -> `Promise`
 
+一种让下面的过程更有效率的方法：
 An efficient shortcut for doing:
 
 ```js
@@ -1267,13 +1287,15 @@ An efficient shortcut for doing:
 });
 ```
 
+######配置：`concurrency`
 ######Option: `concurrency`
-
+参考[`concurrency` limit option in `.map()`](#option-concurrency)
 See [`concurrency` limit option in `.map()`](#option-concurrency)
 
 <hr>
 
 #####`.each(Function iterator)` -> `Promise`
+
 
 Iterate over an array, or a promise of an array, which contains promises (or a mix of promises and values) with the given `iterator` function with the signature `(item, index, value)` where `item` is the resolved value of a respective promise in the input array. Iteration happens serially. If any promise in the input array is rejected the returned promise is rejected as well.
 
