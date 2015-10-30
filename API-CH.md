@@ -512,6 +512,7 @@ MyClass.prototype.method = function() {
 上面的代码有更简洁的写法：
 The above has a direct translation:
 
+
 ```js
 MyClass.prototype.method = function() {
     return fs.readFileAsync(this.file).bind(this)
@@ -813,11 +814,14 @@ Sugar for `Promise.resolve(undefined).bind(thisArg);`. See [`.bind()`](#binddyna
 ##Synchronous inspection
 ##同步检查
 
-有时候我们需要知道在某些特定时刻，一个promise对象的状态 - 使用`then()`来
+有时候我们需要知道在某些特定时刻，一个promise对象的状态 - 使用`then()`来获得这个状态是非常不方便的，因为回调总是异步地执行。
 Often it is known in certain code paths that a promise is guaranteed to be fulfilled at that point - it would then be extremely inconvenient to use `.then()` to get at the promise's value as the callback is always called asynchronously.
 
+**注意**：在最近的Bluebird版本中，`.reason()`和`.value()`以及其他方便状态检查的方法被暴露出来，以便让下面这些例子更简洁。`Promise.settle`方法依然返回一个`PromiseInspection`数组。每一个promise对象现在同样是`PromiseInspection`，所以与状态检查有关的方法可以被用在任何promise对象上。
 
 **Note**: In recent versions of Bluebird a design choice was made to expose `.reason()` and `.value()` as well as other inspection methods on promises directly in order to make the below use case easier to work with. The `Promise.settle` method still returns a `PromiseInspection` array as its result. Every promise is now also a `PromiseInspection` and inspection methods can be used on promises freely.
+
+例如，如果你需要在promise链中使用之前产生的值，你可以像下面这样嵌套：
 
 For example, if you need to use values of earlier promises in the chain, you could nest:
 
@@ -829,8 +833,10 @@ function authenticate() {
     return getUsername().then(function (username) {
         return getUser(username);
     // chained because we will not need the user name in the next event
+    //我们在此处嵌套了一个调用链，因为后面我们不再需要username了
     }).then(function (user) {
         // nested because we need both user and password next
+        //我们在此处嵌套了一个调用链，因为我们同时需要user和password
         return getPassword().then(function (password) {
             if (user.passwordHash !== hash(password)) {
                 throw new Error("Can't authenticate");
@@ -839,6 +845,8 @@ function authenticate() {
     });
 }
 ```
+
+或者你可以像下面这种巧妙的方法：在我们认证密码前，user promise的状态必然是“已完成”。
 
 Or you could take advantage of the fact that if we reach password validation, then the user promise must be fulfilled:
 
@@ -859,9 +867,13 @@ function authenticate() {
 }
 ```
 
+
 In the latter the indentation stays flat no matter how many previous variables you need, whereas with the former each additional previous value would require an additional nesting level.
 
 #### The `PromiseInspection` Interface
+#### `PromiseInspection`接口
+
+这个接口在`Promise`或者`PromiseInspection `对象中都可以被调用，实际上是调用了`Promise.settle`。
 
 This interface is implemented by `Promise` instances as well as `PromiseInspection` results returned by calling `Promise.settle`.
 
@@ -1321,6 +1333,9 @@ function loadStory() {
 <hr>
 
 ##Resource management
+##资源管理
+
+没有漏洞地管理资源是非常具有挑战性的。但仅仅使用`.finally`是远远不够的，例如下面这样：
 
 Managing resources properly without leaks can be surprisingly challenging. Simply using `.finally` is not enough as the following example demonstrates:
 
@@ -1339,11 +1354,17 @@ function doStuff() {
 }
 ```
 
+这里有个非常细微的漏洞：多次执行这段代码会导致连接池溢出，以至于不得不重启服务器。这是因为读取文件时如果失败，`.spread`将不会被调用，进而导致数据库的连接没有被关闭。
+
 It is very subtle but over time this code will exhaust the entire connection pool and the server needs to be restarted. This is because
 reading the file may fail and then of course `.spread` is not called at all and thus the connection is not closed.
 
+有一种解决方法：先读取文件，成功后再连接数据库，或者反之。但是这样的话，连接数据库和读取文件没有同时进行，就失去了异步处理的优势，与我们之前使用同步的方法没什么差别。
+
 One could solve this by either reading the file first or connecting first, and only proceeding if the first step succeeds. However,
 this would lose a lot of the benefits of using asynchronity and we might almost as well go back to using simple synchronous code.
+
+为了保留并发特性的同时，保证没有资源泄露，我们可以使用[`using()`](#promiseusingpromisedisposer-promise-promisedisposer-promise--function-handler---promise):
 
 We can do better, retaining concurrency and not leaking resources, by using [`using()`](#promiseusingpromisedisposer-promise-promisedisposer-promise--function-handler---promise):
 
@@ -1360,6 +1381,8 @@ using(getConnection(),
 
 
 #####`Promise.using(Promise|Disposer promise, Promise|Disposer promise ..., Function handler)` -> `Promise`
+
+
 
 In conjunction with [`.disposer()`](#disposerfunction-disposer---disposer), `using` will make sure that no matter what, the specified disposer will be called when the promise returned by the callback passed to `using` has settled. The disposer is necessary because there is no standard interface in node for disposing resources.
 
@@ -1421,12 +1444,15 @@ using(readFile("1.txt"), readFile("2.txt"), getConnection(), function(txt1, txt2
 
 #####`.disposer(Function disposer)` -> `Disposer`
 
+当使用[`using()`](#promiseusingpromisedisposer-promise-promisedisposer-promise--function-handler---promise)时，用来声明“清理函数”的方法，“清理函数”是指当资源使用完毕之后，将资源清理的一系列流程。
+
 A meta method used to specify the disposer method that cleans up a resource when using [`using()`](#promiseusingpromisedisposer-promise-promisedisposer-promise--function-handler---promise).
 
-Example:
+例子：
 
 ```js
 // This function doesn't return a promise but a Disposer
+// 这个函数返回的不是promise，而是一个disposer（处理器）
 // so it's very hard to use it wrong (not passing it to `using`)
 function getConnection() {
     return pool.getConnectionAsync().disposer(function(connection, promise) {
@@ -1435,7 +1461,7 @@ function getConnection() {
 }
 ```
 
-Real example:
+一个真实的例子：
 
 ```js
 var pg = require("pg");
@@ -1456,7 +1482,7 @@ function getSqlConnection(connectionString) {
 module.exports = getSqlConnection;
 ```
 
-Real example 2:
+另外一个真实例子：
 
 ```js
 var mysql = require("mysql");
@@ -1486,13 +1512,26 @@ The second argument passed to a disposer is the result promise of the using bloc
 
 #### Note about disposers in node
 
+#### 关于在node环境中的disposers（处理器）
+
+如果disposer（处理器）返回了一个失败的promise，那么非常有可能是因为在处置资源的时候出现错误了。如果发生了这种情况，Bluebird面临两种选择 - 忽略这个错误，继续运行程序；或者抛出一个错误，并停止node.js进程。
+
 If a disposer method throws or returns a rejected promise, its highly likely that it failed to dispose of the resource. In that case, Bluebird has two options - it can either ignore the error and continue with program execution or throw an exception (crashing the process in node.js).
+
+我们最终选择了后者，因为资源被认为是“稀缺的”。比如，如果数据库连接没有被处置妥当，而bluebird忽略了它，那么连接池的资源将很快耗尽，进程将变成无用的（所有的请求、数据库查询，都会被永远阻塞）。由于Bluebird不知道该如何处理，所以对于我们来说，明智的选择是终止这个进程，而不是忽略它以至于让这个进程变为无用的。
 
 In bluebird we've chosen to do the later because resources are typically scarce. For example, if a database connection cannot be disposed of and Bluebird ignores that, the connection pool will be quickly depleted and the process will become unusable (all requests that query the database will wait forever). Since Bluebird doesn't know how to handle that, the only sensible default is to crash the process. That way, rather than getting a useless process that cannot fulfill more requests, we can swap the faulty worker with a new one letting the OS clean up the resources for us.
 
+
+因此，如果你对disposer抛出的错误使用了 `try...catch` 并且编写了处理这种错误的代码，但是代码依然没有完美地解决问题，那么让进程终止或许是你最好的选择。
+
 As a result, if you anticipate thrown errors or promise rejections while disposing of the resource you should use a `try..catch` block (or Promise.try) and write the appropriate catch code to handle the errors. If its not possible to sensibly handle the error, letting the process crash is the next best option.
 
+这也意味着disposer不应该包含任何与处置资源无关的代码。比如你不应该在disposer中写入提交或者回滚事务的代码，因为如果这些代码失败的话，disposer捕获不到错误。
+
 This also means that disposers should not contain code that does anything other than resource disposal. For example, you cannot write code inside a disposer to commit or rollback a transaction, because there is no mechanism for the disposer to signal a failure of the commit or rollback action without crashing the process.
+
+如果一定要处理事务的话，你可以参考下面的模式：
 
 For transactions, you can use the following similar pattern instead:
 
@@ -1505,13 +1544,15 @@ function withTransaction(fn) {
       .then(function(res) { return connection.commit().thenReturn(res) },
             function(err) {
               return connection.rollback()
-                     .catch(function(e) {/* maybe add the rollback error to err */})
+                     .catch(function(e) {/* 可以把错误加入到err中 */})
                      .thenThrow(err);
             });
   });
 }
 
+// 如果withTransaction函数成功地执行，那么事务会被自动提交
 // If the withTransaction block completes successfully, the transaction is automatically committed
+// 在此过程中如果出现了任何的错误和异常，都会自动回滚事务
 // Any error or rejection will automatically roll it back
 
 withTransaction(function(tx) {
@@ -1527,8 +1568,13 @@ withTransaction(function(tx) {
 
 
 ##Promisification
+##Promise化
+
+Promise化是指将一个不符合promise规范的API改造成返回promise的API。
 
 Promisification means converting an existing promise-unaware API to a promise-returning API.
+
+在node里通常的做法是使用`promisifyAll `来改造API，然后就可以使用符合promise规范的方法了。比如：
 
 The usual way to use promises in node is to `promisifyAll` some API and start exclusively calling promise returning versions of the APIs methods. E.g.
 
@@ -1536,13 +1582,19 @@ The usual way to use promises in node is to `promisifyAll` some API and start ex
 var fs = require("fs");
 Promise.promisifyAll(fs);
 // Now you can use fs as if it was designed to use bluebird promises from the beginning
+// 现在你可以使用promise化之后的fs模块
 
 fs.readFileAsync("file.js", "utf8").then(...)
 ```
+注意上面是一个特殊的例子，因为`fs`是一个单例对象。大多数的库可以通过获取这个库的类（即构造器函数），然后对`.prototype`调用`promisifyAll `来完成对其的promise化。只需要在整个应用的生命周期里执行一次，之后就可以使用这个库的promise方法 - 即在方法名上添加`Async`后缀。
 
 Note that the above is an exceptional case because `fs` is a singleton instance. Most libraries can be promisified by requiring the library's classes (constructor functions) and calling promisifyAll on the `.prototype`. This only needs to be done once in the entire application's lifetime and after that you may use the library's methods exactly as they are documented, except by appending the `"Async"`-suffix to method calls and using the promise interface instead of the callback interface.
 
+在`fs`模块中有一个例外，`fs.existAsync`的行为不符合预期，因为Node的`fs.exists`不会在第一个参数里回调错误。具体情况请看#418。现有的解决方法是使用`fs.statAsync`。
+
 As a notable exception in `fs`, `fs.existsAsync` doesn't work as expected, because Node's `fs.exists` doesn't call back with error as first argument.  More at #418.  One possible workaround is using `fs.statAsync`.
+
+下面是对于一些常用库的promise化的例子：
 
 Some examples of the above practice applied to some popular libraries:
 
@@ -1651,6 +1703,7 @@ Promise.promisifyAll(require("ncp"));
 var Promise = require("bluebird");
 Promise.promisifyAll(require("pg"));
 ```
+上面的例子中，我们假设了这些库都是直接返回实例的。如果你的需求不是这样，那么可以对初始化后实例使用`Promise.promisifyAll `:
 
 In all of the above cases the library made its classes available in one way or another. If this is not the case, you can still promisify by creating a throwaway instance:
 
@@ -1661,9 +1714,12 @@ Promise.promisifyAll(Object.getPrototypeOf(throwAwayInstance));
 // Like before, from this point on, all new instances + even the throwAwayInstance suddenly support promises
 ```
 
+更详细的说明在[`Promise.promisifyAll()`](#promisepromisifyallobject-target--object-options---object)。
+
 See also [`Promise.promisifyAll()`](#promisepromisifyallobject-target--object-options---object).
 
 #####`Promise.promisify(Function nodeFunction [, dynamic receiver])` -> `Function`
+
 
 Returns a function that will wrap the given `nodeFunction`. Instead of taking a callback, the returned function will return a promise whose fate is decided by the callback behavior of the given node function. The node function should conform to node.js convention of accepting a callback as last argument and calling that callback with error as the first argument and success value on the second argument.
 
